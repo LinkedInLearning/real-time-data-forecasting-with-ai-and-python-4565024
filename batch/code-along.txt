@@ -138,6 +138,6 @@ feature_store.update_feature_store(batch_df, yaml_file_path)
 
 --- 
 
-feature_store.fetch_data_from_store('feature', '2024-04-5', yaml_file_path)
+feature_store.fetch_data_from_store('2024-04-5', yaml_file_path)
 
 ---
