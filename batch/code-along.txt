@@ -1,0 +1,78 @@
+---
+
+import pandas as pd
+import xgboost
+import os
+import joblib
+from scripts import feature_store, feature_processing
+
+---
+
+# Path to the YAML configuration file
+yaml_file_path = ('feature_store/config_v1.yaml')
+
+---
+
+# Fetch data from feature store given a certain criteria
+features_df = feature_store.fetch_data_from_store("2024-03-23", yaml_file_path)
+features_df
+
+--- 
+
+# Run predictions with all three models
+
+predictions_ls = [] # list to store predictions
+
+# Load each model from its respective file
+for idx in range(1, 4):  # Assuming there are 3 models
+    filename = f'models/batch_demand_forecaster_model_{idx}.pkl'
+    model = joblib.load(filename)
+    prediction = model.predict(features_df)
+    predictions_ls.append(prediction)
+    
+---
+
+predictions_ls
+
+---
+
+# Let's compare to the true values!
+# (Note: You would normally do this in hindsight, but remember the last 7 dates were not used for training!)
+
+targets_df = feature_store.fetch_data_from_store("2024-03-23", yaml_file_path, targets=True)
+targets_df
+
+---
+
+predictions_df = pd.DataFrame({f'predicted_{i+1}d': predictions_ls[i] for i in range(len(predictions_ls))})
+predictions_df.index = features_df.index
+result_df = predictions_df.join(targets_df, how = "inner")
+result_df
+
+---
+
+import matplotlib.pyplot as plt
+import pandas as pd
+
+def plot_forecast(data, date):
+    # Select the data for the specific date
+    daily_data = data.loc[date]
+
+    # Prepare the data for plotting
+    actuals = [daily_data['target_1d'], daily_data['target_2d'], daily_data['target_3d']]
+    predictions = [daily_data['predicted_1d'], daily_data['predicted_2d'], daily_data['predicted_3d']]
+
+    plt.figure(figsize=(10, 6))
+    days = ['+1 Day', '+2 Days', '+3 Days']
+    
+    plt.plot(days, actuals, label='Actual', marker='o', linestyle='-', color='blue')
+    plt.plot(days, predictions, label='Predicted', marker='x', linestyle='--', color='red')
+    
+    plt.title(f'Actual vs. Predicted for {date}')
+    plt.xlabel('Forecast Horizon')
+    plt.ylabel('Values')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+plot_forecast(result_df, '2024-04-03')
