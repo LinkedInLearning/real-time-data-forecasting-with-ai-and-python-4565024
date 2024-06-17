@@ -1,0 +1,143 @@
+---
+
+import os
+import yaml
+import pandas as pd 
+
+---
+
+# Setting up our feature store
+
+# Directory for feature store
+directory = "feature_store"
+if not os.path.exists(directory):
+    os.makedirs(directory)
+
+# Feature definitions
+id = "v1"
+config_data = {
+    'feature_store': {
+        'id': f"{id}",
+        'latest_feature': "1999-01-01",
+        'latest_target': "1999-01-01",
+        'feature_offset': "13",
+        'target_offset': "3",
+        'features_path': f"feature_store/features_{id}.csv",
+        'targets_path': f"feature_store/targets_{id}.csv",
+        'schema': {
+            'features': [
+                {'name': 'lag_1', 'type': 'float'},
+                {'name': 'lag_4', 'type': 'float'},
+                {'name': 'lag_5', 'type': 'float'},
+                {'name': 'lag_6', 'type': 'float'},
+                {'name': 'lag_11', 'type': 'float'},
+                {'name': 'lag_12', 'type': 'float'},
+                {'name': 'lag_13', 'type': 'float'},
+                {'name': 'rolling_mean_7', 'type': 'float'},
+                {'name': 'rolling_std_7', 'type': 'float'}
+            ],
+            'targets': [
+                {'name': 'target_1d', 'type': 'float'},
+                {'name': 'target_2d', 'type': 'float'},
+                {'name': 'target_3d', 'type': 'float'}
+            ]
+        }
+    }
+}
+
+# Path to the YAML configuration file
+yaml_file_path = os.path.join(directory, f"config_{id}.yaml")
+
+# Write the configuration data to a YAML file
+with open(yaml_file_path, 'w') as file:
+    yaml.dump(config_data, file, default_flow_style=False)
+    
+    
+--- 
+
+from scripts import feature_processing, feature_store
+
+# Load the file
+csv_file_path = 'data/energy_data.csv'
+df = pd.read_csv(csv_file_path, parse_dates=['period'])
+df.set_index('period', inplace=True)
+
+# Run the feature pipeline
+batch_df = feature_processing.feature_pipeline(df)
+batch_df
+
+---# feature_store.py
+
+import yaml
+import pandas as pd
+import os
+
+def update_feature_store(batch_df, yaml_file_path):
+
+    # Load YAML file
+    with open(yaml_file_path, 'r') as file:
+        config = yaml.safe_load(file)
+
+    # Write feature set to blob
+    features_path = config['feature_store']['features_path']
+    batch_df.to_csv(features_path, index=True)    
+
+    # Update the 'last_update' field in the 'feature_store' dictionary
+    new_last_update = batch_df.index.max()
+    config['feature_store']['latest_feature'] = str(new_last_update)
+    
+    # Write the updated configuration back to the YAML file
+    with open(yaml_file_path, 'w') as file:
+        yaml.dump(config, file, default_flow_style=False)
+    
+    print("Feature store updated with last date " + str(new_last_update))
+
+---
+
+# Update the feature store
+yaml_file_path = "feature_store/config_v1.yaml"
+feature_store.update_feature_store(batch_df, yaml_file_path)
+
+---# feature_store.py
+
+def fetch_data_from_store(period=None, yaml_file_path = None):
+    
+    # Load YAML file
+    with open(yaml_file_path, 'r') as file:
+        config = yaml.safe_load(file)
+
+    data_path = config['feature_store']['features_path']
+    
+    # Load data from CSV
+    data_df = pd.read_csv(data_path, index_col='period', parse_dates=True)
+    
+    # Filter data by period if provided
+    if period is not None:        
+        # Filter to get data from the period onward
+        data_df = data_df.loc[period:]
+    
+    return data_df
+    
+    
+---
+
+from scripts import feature_store
+feature_store.fetch_data_from_store('2024-03-23', yaml_file_path)
+
+---
+
+# Simulate new data coming in
+# This regenerates the entire feature store
+# In practice: re-calculate only the delta
+
+csv_file_path = 'data/energy_data_new.csv'
+df = pd.read_csv(csv_file_path, parse_dates=['period']).set_index('period')
+
+batch_df = feature_processing.feature_pipeline(df)
+feature_store.update_feature_store(batch_df, yaml_file_path)
+
+--- 
+
+feature_store.fetch_data_from_store('feature', '2024-04-5', yaml_file_path)
+
+---
