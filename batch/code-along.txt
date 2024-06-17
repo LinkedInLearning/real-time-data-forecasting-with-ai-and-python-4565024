@@ -1,0 +1,235 @@
+
+---
+
+import yaml
+import pandas as pd
+
+# Path to the YAML configuration file
+yaml_file_path = 'feature_store/config_v1.yaml'
+
+# Write the configuration data to a YAML file
+with open(yaml_file_path, 'r') as file:
+    config = yaml.safe_load(file)
+    
+    
+---
+
+# Get Features
+from scripts import feature_store
+X_train = feature_store.fetch_data_from_store(yaml_file_path = yaml_file_path)
+X_train = X_train.head(-7) # save some rows for later
+X_train
+
+
+---
+
+# Get targets
+from scripts import feature_processing
+
+csv_file_path = 'data/energy_data_new.csv'
+df = pd.read_csv(csv_file_path, parse_dates=['period'])
+df.set_index('period', inplace=True)
+
+targets_df = feature_processing.get_targets(df)
+targets_df
+
+
+--- Replace in #feature_store.py
+
+
+def update_feature_store(batch_df, yaml_file_path, targets = False):
+
+    # Load YAML file
+    with open(yaml_file_path, 'r') as file:
+        config = yaml.safe_load(file)
+
+    if targets:
+        # Write feature set to blob
+        targets_path = config['feature_store']['targets_path']
+        batch_df.to_csv(targets_path, index=True)    
+
+        # Update the 'latest_target' field in the 'feature_store' dictionary
+        new_last_update = batch_df.index.max()
+        config['feature_store']['latest_target'] = str(new_last_update)
+        
+        # Write the updated configuration back to the YAML file
+        with open(yaml_file_path, 'w') as file:
+            yaml.dump(config, file, default_flow_style=False)
+        
+        return("Targets updated in feature store with last date " + str(new_last_update))
+        
+--- restart notebook
+
+feature_store.update_feature_store(targets_df, yaml_file_path, targets = True)
+
+--- Replace in #feature_store.py
+
+def fetch_data_from_store(period=None, yaml_file_path = None, targets = False):
+    
+    # Load YAML file
+    with open(yaml_file_path, 'r') as file:
+        config = yaml.safe_load(file)
+
+    if targets:
+        data_path = config['feature_store']['targets_path']
+        data_df = pd.read_csv(data_path, index_col='period', parse_dates=True)
+        if period is not None:        
+            data_df = data_df.loc[period:]
+        return data_df
+        
+--- restart notebook
+
+feature_store.fetch_data_from_store(X_train.index.min(), yaml_file_path, targets = True)
+
+---
+
+# Same date range for targes and features
+Y_train = feature_store.fetch_data_from_store(X_train.index.min(), yaml_file_path, targets = True)[:X_train.index.max()]
+Y_train
+
+---
+
+# turn into a list
+y_train_ls= []
+for target in Y_train.columns:
+  y_train_ls.append(Y_train[target])
+
+y_train_ls
+
+
+---
+
+# Install XGBoost model
+%pip install xgboost
+
+---
+
+import xgboost as xgb
+
+# Loop through targets - train one model for each target variable
+cv_results_ls = []
+for y_train in y_train_ls:
+
+  # Prepare the DMatrix which is required by XGBoost
+  dtrain = xgb.DMatrix(data=X_train, label=y_train)
+
+  # Define XGBoost parameters
+  params = {
+    #'max_depth': 6,
+    #'min_child_weight': 1,
+    #'eta': 0.5,
+    #'subsample': 1,
+    #'colsample_bytree': 1,
+    'objective': 'reg:squarederror',
+    'eval_metric': 'rmse'
+  }
+
+  # Perform cross-validation
+  cv_results = xgb.cv(
+      params=params,
+      dtrain=dtrain,
+      num_boost_round=100,
+      nfold = 4,
+      early_stopping_rounds=10,
+      metrics='rmse',
+      as_pandas=True,
+      seed=123
+  )
+  cv_results_ls.append(cv_results)
+  # Show the last mean RMSE as a measure of final performance
+  print(f"Last mean RMSE: {cv_results['test-rmse-mean'][-1:]}")
+  
+  
+  ---
+  
+  import matplotlib.pyplot as plt
+
+# Plot RMSE through iterations with different colors for each line
+
+plt.figure(figsize=(10, 6))
+
+for idx, cv_results in enumerate(cv_results_ls):
+    plt.plot(cv_results['test-rmse-mean'], label=f'CV Run {idx+1}')
+
+plt.title('Test RMSE Through Iterations')
+plt.xlabel('Number of Boosting Rounds')
+plt.ylabel('Mean RMSE')
+plt.legend()
+plt.show()
+
+
+---
+
+
+# List to store the final models
+final_models_ls = []
+
+# Use the same params here you used in cross-validation
+params = {
+    'objective': 'reg:squarederror',
+    'eval_metric': 'rmse'
+  }
+
+# Iterate through each set of cross-validation results and corresponding training targets
+for cv_results, y_train in zip(cv_results_ls, y_train_ls):
+    # Determine the optimal number of boosting rounds from cross-validation results
+    optimal_boost_rounds = cv_results['test-rmse-mean'].idxmin() + 1
+
+    # Initialize the XGBoost regressor with determined parameters
+    final_model = xgb.XGBRegressor(
+        n_estimators=optimal_boost_rounds,
+        **params
+    )
+
+    # Train the model on the full training dataset
+    final_model.fit(X_train, y_train)
+
+    # Append the trained model to the list
+    final_models_ls.append(final_model)
+    
+---
+
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+# Generate residual plot
+
+# Initialize lists to hold all predicted values and residuals
+all_y_pred = []
+all_residuals = []
+
+# Generate a list of colors using a colormap
+colors = plt.cm.viridis(np.linspace(0, 1, len(final_models_ls)))
+
+# Plot residuals for each model
+plt.figure(figsize=(10, 6))
+
+for idx, (final_model, y_train) in enumerate(zip(final_models_ls, y_train_ls)):
+    # Make predictions
+    y_pred = final_model.predict(X_train)
+
+    # Calculate residuals
+    residuals = y_train - y_pred
+
+    # Plot residuals with a unique color for each model
+    plt.scatter(y_pred, residuals, color=colors[idx], alpha=0.5, label=f'Model {idx+1}')
+
+# Add plot title and labels
+plt.axhline(y=0, color='red', linestyle='--')
+plt.title('In-Sample Residual Plot for All Models')
+plt.xlabel('Predicted Values')
+plt.ylabel('Residuals')
+plt.legend()  # Add a legend to differentiate each model
+plt.show()
+
+
+---
+
+
+import joblib
+
+# Save each model with a unique filename
+for idx, final_model in enumerate(final_models_ls):
+    filename = f'models/batch_demand_forecaster_model_{idx+1}.pkl'  # Create a unique filename for each model
+    joblib.dump(final_model, filename)
