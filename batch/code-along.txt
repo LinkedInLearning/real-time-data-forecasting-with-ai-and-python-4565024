@@ -1,0 +1,163 @@
+import pandas as pd
+
+
+---
+
+
+csv_file_path = 'data/energy_data.csv'
+
+
+---
+
+
+# In case you want to pull this data live
+# import requests
+# import os
+
+# get the EIA API key form your secrets
+# API_KEY = os.environ.get('EIA_API_KEY')
+
+# API URL
+# url = "https://api.eia.gov/v2/electricity/rto/region-sub-ba-data/data/?frequency=hourly&data[0]=value&facets[subba][]=ZONJ&start=2024-01-01T00&end=2024-03-30T23&sort[0][column]=period&sort[0][direction]=desc&offset=0&length=5000&api_key="+API_KEY
+
+# Make a GET request
+# response = requests.get(url)
+# data = response.json()  # Decode the JSON response into a dictionary
+
+# Extract data from the response
+# energy_data = data['response']['data']
+# df = pd.DataFrame(energy_data)
+# df.to_csv(csv_file_path, index=False)
+
+
+---
+
+# Load DataFrame from CSV
+df = pd.read_csv(csv_file_path, parse_dates=['period']).set_index('period')
+
+# Display the DataFrame
+df.head()
+
+---
+
+# Aggreggate by day:
+df_daily = df.resample('D').sum("value")
+df_daily
+
+---
+
+# Inspect time series
+df_daily.plot(figsize=(10,5))
+
+---
+
+batch_df = pd.DataFrame()
+
+# Lagging features
+batch_df['lag_1'] = df_daily['value'].shift(1) # Energy demand -1 day
+
+batch_df['lag_4'] = df_daily['value'].shift(4) # Energy demand +3 days - 7 days
+batch_df['lag_5'] = df_daily['value'].shift(5) # Energy demand +2 days - 7 days
+batch_df['lag_6'] = df_daily['value'].shift(6) # Energy demand +1 days - 7 days
+
+batch_df['lag_11'] = df_daily['value'].shift(11) # Energy demand +3 days - 14 days
+batch_df['lag_12'] = df_daily['value'].shift(12) # Energy demand +2 days - 14 days
+batch_df['lag_13'] = df_daily['value'].shift(13) # Energy demand +1 days - 14 days
+
+batch_df.head(14)
+
+--- 
+
+# Rolling statistics
+batch_df['rolling_mean_7'] = df_daily['value'].rolling(window=7).mean().round(2)
+batch_df['rolling_std_7'] = df_daily['value'].rolling(window=7).std().round(2)
+
+batch_df.head(7)
+
+---
+
+# Inspect target variable - it's actually 3!
+
+# Lagging target variable
+batch_df['target_1d'] = df_daily['value'].shift(-1) # Next day
+batch_df['target_2d'] = df_daily['value'].shift(-2) # Second-next day
+batch_df['target_3d'] = df_daily['value'].shift(-3) # Third-next day
+
+batch_df.head(15)
+
+---
+
+# check targets
+df_daily.head(4)
+
+
+---
+
+# Drop NaN-values
+batch_df = batch_df.dropna()
+batch_df
+
+---
+
+# Check correlation matrix. 
+# Ideally we want low correlation between features, but high correlation between features and target
+
+corr = batch_df.corr()
+corr.style.background_gradient(cmap='coolwarm')
+
+---/scripts/feature_processing.py
+
+import pandas as pd
+
+def feature_pipeline(energy_data):
+    df_daily = energy_data.resample('D').sum("value")
+
+    batch_df = pd.DataFrame()
+
+    # Lagging features
+    batch_df['lag_1'] = df_daily['value'].shift(1) # Energy demand -1 day
+
+    batch_df['lag_4'] = df_daily['value'].shift(4) # Energy demand +3 days - 7 days
+    batch_df['lag_5'] = df_daily['value'].shift(5) # Energy demand +2 days - 7 days
+    batch_df['lag_6'] = df_daily['value'].shift(6) # Energy demand +1 days - 7 days
+
+    batch_df['lag_11'] = df_daily['value'].shift(11) # Energy demand +3 days - 14 days
+    batch_df['lag_12'] = df_daily['value'].shift(12) # Energy demand +2 days - 14 days
+    batch_df['lag_13'] = df_daily['value'].shift(13) # Energy demand +1 days - 14 days
+
+    # Rolling statistics
+    batch_df['rolling_mean_7'] = df_daily['value'].rolling(window=7).mean().round(2)
+    batch_df['rolling_std_7'] = df_daily['value'].rolling(window=7).std().round(2)
+    
+    batch_df = batch_df.dropna()
+
+    return batch_df
+
+def get_targets(energy_data):
+    df_daily = energy_data.resample('D').sum("value")
+    
+    targets_df = pd.DataFrame()
+    # Lagging target variable
+    targets_df['target_1d'] = df_daily['value'].shift(-1) # Next day
+    targets_df['target_2d'] = df_daily['value'].shift(-2) # Second-next day
+    targets_df['target_3d'] = df_daily['value'].shift(-3) # Third-next day
+    targets_df = targets_df.dropna()
+
+    return targets_df
+    
+---
+
+# pulling everything together
+
+# Load DataFrame from CSV
+df = pd.read_csv(csv_file_path, parse_dates=['period'])
+df.set_index('period', inplace=True)
+
+# Run the feature pipeline
+from scripts import feature_processing
+feature_processing.feature_pipeline(df)
+
+---
+
+# Calculate targets
+feature_processing.get_targets(df)
