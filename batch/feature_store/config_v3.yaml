@@ -2,7 +2,7 @@ feature_store:
   feature_offset: '13'
   features_path: feature_store/features_v3.csv
   id: v3
-  latest_feature: '2024-03-31 00:00:00'
+  latest_feature: '2024-04-01 00:00:00'
   latest_target: '1999-01-01'
   schema:
     features:
