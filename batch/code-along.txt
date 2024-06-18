@@ -134,9 +134,9 @@ for y_train in y_train_ls:
   print(f"Last mean RMSE: {cv_results['test-rmse-mean'][-1:]}")
   
   
-  ---
+---
   
-  import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 
 # Plot RMSE through iterations with different colors for each line
 
