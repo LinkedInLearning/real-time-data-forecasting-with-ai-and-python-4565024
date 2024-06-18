@@ -1,0 +1,97 @@
+import pandas as pd
+csv_file_path = 'data/energy_data_new.csv'
+df = (pd.read_csv(csv_file_path, parse_dates=['period'])
+      .set_index('period')
+      .sort_index(ascending=False))
+df = df.tail(-81)
+df
+
+---
+
+import yaml
+import os
+directory = "feature_store"
+yaml_file_path = os.path.join(directory, 'config_v1.yaml')
+with open(yaml_file_path, 'r') as file:
+    config = yaml.safe_load(file)
+
+max_offset_days = int(config['feature_store']['feature_offset'])
+
+print(max_offset_days)
+
+---
+
+max_offset_hours = (max_offset_days + 1) * 24 # +1 because we need the current day + the offset
+max_offset_hours
+
+---
+
+# Get one mini-batch of data
+mini_batch_df = df[:max_offset_hours]
+mini_batch_df
+
+---
+
+chunk_size = 24
+periods = mini_batch_df.index[::chunk_size]  # Select every chunk_size-th index as the period
+sums = [mini_batch_df.iloc[i:i + chunk_size]['value'].sum() for i in range(0, len(mini_batch_df), chunk_size)]
+resampled_df = pd.DataFrame({'period': periods, 'value': sums})
+resampled_df.set_index('period', inplace=True)
+resampled_df
+
+---
+
+# Recalculating features
+
+def feature_pipeline_online(mini_batch_df):
+    
+    # Resample the last 24 hours relatively
+    chunk_size = 24
+    periods = mini_batch_df.index[::chunk_size]  # Select every chunk_size-th index as the period
+    sums = [mini_batch_df.iloc[i:i + chunk_size]['value'].sum() for i in range(0, len(mini_batch_df), chunk_size)]
+    resampled_df = pd.DataFrame({'period': periods, 'value': sums})
+    resampled_df.set_index('period', inplace=True)
+    resampled_df = resampled_df.sort_index(ascending = True)
+
+    batch_df = pd.DataFrame()
+
+    # Lagging features
+    batch_df['lag_1'] = resampled_df['value'].shift(1) # Energy demand -1 day
+
+    batch_df['lag_4'] = resampled_df['value'].shift(4) # Energy demand +3 days - 7 days
+    batch_df['lag_5'] = resampled_df['value'].shift(5) # Energy demand +2 days - 7 days
+    batch_df['lag_6'] = resampled_df['value'].shift(6) # Energy demand +1 days - 7 days
+
+    batch_df['lag_11'] = resampled_df['value'].shift(11) # Energy demand +3 days - 14 days
+    batch_df['lag_12'] = resampled_df['value'].shift(12) # Energy demand +2 days - 14 days
+    batch_df['lag_13'] = resampled_df['value'].shift(13) # Energy demand +1 days - 14 days
+
+    # Rolling statistics
+    batch_df['rolling_mean_7'] = resampled_df['value'].rolling(window=7).mean().round(2)
+    batch_df['rolling_std_7'] = resampled_df['value'].rolling(window=7).std().round(2) 
+    
+    batch_df = batch_df.dropna()
+    
+    return batch_df
+
+---
+
+feature_pipeline_online(mini_batch_df)
+
+---
+
+# try with some new data
+datetime = "2024-04-03 10:00:00"
+csv_file_path = 'data/energy_data_new.csv'
+
+# This could also be a SQL statement
+mini_batch_df = (pd.read_csv(csv_file_path, parse_dates=['period'])
+      .set_index('period')
+      .sort_index(ascending=False)
+      .query("period <= @datetime"))[:max_offset_hours]
+
+# Process batch on the fly
+feature_pipeline_online(mini_batch_df)
+
+---
+
