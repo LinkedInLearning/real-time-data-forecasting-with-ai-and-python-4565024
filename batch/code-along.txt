@@ -96,12 +96,6 @@ for target in Y_train.columns:
 
 y_train_ls
 
-
----
-
-# Install XGBoost model
-%pip install xgboost
-
 ---
 
 import xgboost as xgb
