@@ -1,0 +1,37 @@
+feature_store:
+  feature_offset: '13'
+  features_path: feature_store/features_v2.csv
+  id: v2
+  latest_feature: '2024-03-30 00:00:00'
+  latest_target: '1999-01-01'
+  schema:
+    features:
+    - name: lag_1
+      type: float
+    - name: lag_4
+      type: float
+    - name: lag_5
+      type: float
+    - name: lag_6
+      type: float
+    - name: lag_11
+      type: float
+    - name: lag_12
+      type: float
+    - name: lag_13
+      type: float
+    - name: rolling_mean_7
+      type: float
+    - name: rolling_std_7
+      type: float
+    - name: day_of_week
+      type: int
+    targets:
+    - name: target_1d
+      type: float
+    - name: target_2d
+      type: float
+    - name: target_3d
+      type: float
+  target_offset: '3'
+  targets_path: feature_store/targets_v1.csv
