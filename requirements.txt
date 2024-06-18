@@ -4,3 +4,5 @@ pandas==2.2.2
 scikit-learn==1.5.0
 xgboost==2.1.0rc1
 ipywidgets==8.1.2
+docker==7.1.0
+quixstreams==2.5.1
