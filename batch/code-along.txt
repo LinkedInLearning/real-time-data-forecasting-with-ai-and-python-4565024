@@ -111,10 +111,12 @@ def feature_pipeline(energy_df, temp_df):
     batch_df['rolling_mean_7'] = energy_df_daily['value'].rolling(window=7).mean().round(2)
     batch_df['rolling_std_7'] = energy_df_daily['value'].rolling(window=7).std().round(2)
 
+    # NEW: Add weather data
+    temp_df = temp_df['temperature'].shift(-1) # shift temperature data by 1
+    
     # Bring weather data to same granularity as energy data
     temp_df_daily = temp_df.sort_index(ascending=True).resample('D').mean("value")
-
-    # NEW: Add weather data
+  
     batch_df = batch_df.join(temp_df_daily, how='left') # left join ensures we just add temp to where energy data exists
     batch_df = batch_df.rename(columns={"temperature": "temperature_forecast"}) # be explicit that this is the forecast about this date
 
@@ -282,7 +284,8 @@ def feature_pipeline_online(df, temp_df):
     batch_df = batch_df.dropna()
 
     # NEW: Average weather for the next 24 hours
-    batch_df['temperature_forecast'] = temp_df['temperature'].mean()
+    temp_df = temp_df['temperature'].shift(-1)
+    batch_df['temperature_forecast'] = temp_df.mean()
     
     return batch_df
 
