@@ -1,0 +1,12 @@
+[
+    {
+        "model": "models/energy_demand_model_v1.pkl",
+        "training_date": "2024-04-01",
+        "model_id": "v1"
+    },
+    {
+        "model": "models/energy_demand_model_v2.pkl",
+        "training_date": "2024-04-01",
+        "model_id": "v2"
+    }
+]
