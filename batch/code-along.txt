@@ -1,0 +1,32 @@
+import yaml
+import joblib
+import xgboost
+import pandas as pd
+from scripts import feature_processing
+
+# Step 1: Import the config variables -- 
+yaml_file_path = 'feature_store/config_v1.yaml'
+with open(yaml_file_path, 'r') as file:
+    config = yaml.safe_load(file)
+max_offset_days = int(config['feature_store']['feature_offset'])
+max_offset_hours = (max_offset_days + 1) * 24 
+datetime = "2024-04-05 15:00:00" # could fetch the current hour, or the latest available data
+
+
+# Step 2: Fetch a Mini-Batch of data -- 
+csv_file_path = 'data/energy_data_new.csv' # could be a data warehouse
+
+# Could also be a SQL statement:
+mini_batch_df = (pd.read_csv(csv_file_path, parse_dates=['period'])
+      .set_index('period')
+      .sort_index(ascending=False)
+      .query("period <= @datetime"))[:max_offset_hours]
+
+# Step 3: Run the feature pipeline ---
+online_features_df = feature_processing.feature_pipeline_online(mini_batch_df) # could be an API
+
+# Step 4: Get the predictions ---
+filename = 'models/batch_demand_forecaster_model_1.pkl' #  Could be an API
+model = joblib.load(filename)
+prediction = model.predict(online_features_df)
+prediction
