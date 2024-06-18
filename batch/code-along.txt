@@ -1,0 +1,292 @@
+import matplotlib.pyplot as plt
+import numpy as np
+
+# Generate residual plos
+
+# Plot residuals for each model
+plt.figure(figsize=(10, 6))
+
+# Make predictions
+y_pred = final_model.predict(X_train)
+
+# Calculate residuals
+residuals = y_train - y_pred
+
+# Plot residuals 
+plt.scatter(y_pred, residuals, alpha=0.5)
+
+# Add plot title and labels
+plt.axhline(y=0, color='red', linestyle='--')
+plt.title('In-Sample Residual Plot')
+plt.xlabel('Predicted Values')
+plt.ylabel('Residuals')
+plt.show()
+
+---
+
+# Load and inspect data
+energy_file_path = 'data/energy_data_2024-04-01.csv'
+weather_file_path = 'data/weather_forecast_2024-04-01.csv'
+
+---
+
+import pandas as pd
+energy_df = pd.read_csv(energy_file_path, parse_dates=['period']).set_index("period")
+temp_df = pd.read_csv(weather_file_path, parse_dates=['period']).set_index("period")
+
+---
+
+# Setting up our feature store
+import os
+import yaml
+
+# Directory for feature store
+directory = "feature_store"
+if not os.path.exists(directory):
+    os.makedirs(directory)
+
+# Feature definitions
+id = "v3"
+config_data = {
+    'feature_store': {
+        'id': f"{id}",
+        'latest_feature': "1999-01-01",
+        'latest_target': "1999-01-01",
+        'feature_offset': "13",
+        'target_offset': "3",
+        'features_path': f"feature_store/features_{id}.csv",
+        'targets_path': f"feature_store/targets_v1.csv",
+        'schema': {
+            'features': [
+                {'name': 'lag_1', 'type': 'float'},
+                {'name': 'lag_4', 'type': 'float'},
+                {'name': 'lag_5', 'type': 'float'},
+                {'name': 'lag_6', 'type': 'float'},
+                {'name': 'lag_11', 'type': 'float'},
+                {'name': 'lag_12', 'type': 'float'},
+                {'name': 'lag_13', 'type': 'float'},
+                {'name': 'rolling_mean_7', 'type': 'float'},
+                {'name': 'rolling_std_7', 'type': 'float'},
+                {'name': 'temperature_forecast', 'type': 'float'} # new
+
+            ],
+            'targets': [
+                {'name': 'target_1d', 'type': 'float'},
+                {'name': 'target_2d', 'type': 'float'},
+                {'name': 'target_3d', 'type': 'float'}
+            ]
+        }
+    }
+}
+
+# Path to the YAML configuration file
+yaml_file_path = os.path.join(directory, f"config_{id}.yaml")
+
+# Write the configuration data to a YAML file
+with open(yaml_file_path, 'w') as file:
+    yaml.dump(config_data, file, default_flow_style=False)
+
+---
+
+# feature pipeline
+
+def feature_pipeline(energy_df, temp_df):
+    
+    energy_df_daily = energy_df.sort_index(ascending=True).resample('D').sum("value")
+
+    batch_df = pd.DataFrame()
+
+    # Lagging features
+    batch_df['lag_1'] = energy_df_daily['value'].shift(1) # Energy demand -1 day
+
+    batch_df['lag_4'] = energy_df_daily['value'].shift(4) # Energy demand +3 days - 7 days
+    batch_df['lag_5'] = energy_df_daily['value'].shift(5) # Energy demand +2 days - 7 days
+    batch_df['lag_6'] = energy_df_daily['value'].shift(6) # Energy demand +1 days - 7 days
+
+    batch_df['lag_11'] = energy_df_daily['value'].shift(11) # Energy demand +3 days - 14 days
+    batch_df['lag_12'] = energy_df_daily['value'].shift(12) # Energy demand +2 days - 14 days
+    batch_df['lag_13'] = energy_df_daily['value'].shift(13) # Energy demand +1 days - 14 days
+
+    # Rolling statistics
+    batch_df['rolling_mean_7'] = energy_df_daily['value'].rolling(window=7).mean().round(2)
+    batch_df['rolling_std_7'] = energy_df_daily['value'].rolling(window=7).std().round(2)
+
+    # Bring weather data to same granularity as energy data
+    temp_df_daily = temp_df.sort_index(ascending=True).resample('D').mean("value")
+
+    # NEW: Add weather data
+    batch_df = batch_df.join(temp_df_daily, how='left') # left join ensures we just add temp to where energy data exists
+    batch_df = batch_df.rename(columns={"temperature": "temperature_forecast"}) # be explicit that this is the forecast about this date
+
+    batch_df = batch_df.dropna()
+    
+    return batch_df
+
+---
+
+from scripts import feature_store
+
+batch_df = feature_pipeline(energy_df, temp_df)
+feature_store.update_feature_store(batch_df, yaml_file_path)
+
+---
+
+import xgboost as xgb
+
+X_train = feature_store.fetch_data_from_store(yaml_file_path = yaml_file_path)
+X_train = X_train.head(-7) # save some rows for later
+y_train = feature_store.fetch_data_from_store(X_train.index.min(), yaml_file_path, targets = True)[:X_train.index.max()]['target_1d']
+
+# Prepare the DMatrix which is required by XGBoost
+dtrain = xgb.DMatrix(data=X_train, label=y_train)
+
+# Define XGBoost parameters
+params = {
+'objective': 'reg:squarederror',
+'eval_metric': 'rmse'
+}
+
+# Perform cross-validation
+cv_results = xgb.cv(
+    params=params,
+    dtrain=dtrain,
+    num_boost_round=999,
+    nfold = 3,
+    early_stopping_rounds=10,
+    metrics='rmse',
+    as_pandas=True,
+    seed=123
+)
+
+# Show the last mean RMSE as a measure of final performance
+print(f"Last mean RMSE: {cv_results['test-rmse-mean'].min()}")
+
+---
+
+import yaml
+import joblib
+import xgboost
+import pandas as pd
+
+# Step 1: Import the config variables -- 
+yaml_file_path = 'feature_store/config_v1.yaml'
+with open(yaml_file_path, 'r') as file:
+    config = yaml.safe_load(file)
+max_offset_days = int(config['feature_store']['feature_offset'])
+max_offset_hours = (max_offset_days + 1) * 24 
+datetime = "2024-04-05 15:00:00" # could fetch the current hour, or the latest available data
+
+
+# Step 2: Fetch a mini-batch of data -- 
+energy_csv_file_path = 'data/energy_data_2024-04-01.csv'
+temp_csv_file_path = 'data/weather_forecast_2024-04-01.csv'
+
+# Could also be a SQL statement:
+energy_mini_batch_df = (pd.read_csv(energy_csv_file_path, parse_dates=['period'])
+      .set_index('period')
+      .sort_index(ascending=False)
+      .query("period <= @datetime"))[:max_offset_hours]
+
+# Get forecast for the next 24 hours
+temp_mini_batch = (pd.read_csv(temp_csv_file_path, parse_dates=['period'])
+                   .set_index('period')
+                   .sort_index(ascending = False)
+                   .query("period >= @datetime")
+                   .tail(24)
+                   )
+temp_mini_batch
+
+# Step 3: Run the feature pipeline ---
+online_features_df = feature_pipeline_online(energy_mini_batch_df, temp_mini_batch) # could be an API
+
+# Step 4: Get the predictions ---
+filename = f'models/batch_demand_forecaster_model_1_{id}.pkl' 
+model = joblib.load(filename)
+prediction = model.predict(online_features_df)
+prediction
+
+---
+
+# Train on whole data with ideal number of boosting rounds
+
+# Use the same params here you used in cross-validation
+params = {
+    'objective': 'reg:squarederror',
+    'eval_metric': 'rmse'
+  }
+
+optimal_boost_rounds = cv_results['test-rmse-mean'].idxmin() + 1
+
+# Initialize the XGBoost regressor with determined parameters
+final_model = xgb.XGBRegressor(
+    n_estimators=optimal_boost_rounds,
+    **params
+)
+
+# Train the model on the full training dataset
+final_model.fit(X_train, y_train)
+
+---
+
+import matplotlib.pyplot as plt
+
+# Plot RMSE through iterations with different colors for each line
+
+plt.figure(figsize=(10, 6))
+
+
+plt.plot(cv_results['test-rmse-mean'])
+
+plt.title('Test RMSE Through Iterations')
+plt.xlabel('Number of Boosting Rounds')
+plt.ylabel('Mean RMSE')
+plt.show()
+
+---
+
+import joblib
+
+# Save model
+filename = f'models/batch_demand_forecaster_model_1_{id}.pkl' 
+joblib.dump(final_model, filename)
+
+---
+
+def feature_pipeline_online(df, temp_df):
+    
+    # Resample the last 24 hours relatively
+    chunk_size = 24
+    periods = df.index[::chunk_size]  # Select every chunk_size-th index as the period
+    sums = [df.iloc[i:i + chunk_size]['value'].sum() for i in range(0, len(df), chunk_size)]
+    df_daily = pd.DataFrame({'period': periods, 'value': sums})
+    df_daily.set_index('period', inplace=True)
+    df_daily = df_daily.sort_index(ascending = True)
+
+    batch_df = pd.DataFrame()
+
+    # Lagging features
+    batch_df['lag_1'] = df_daily['value'].shift(1) # Energy demand -1 day
+
+    batch_df['lag_4'] = df_daily['value'].shift(4) # Energy demand +3 days - 7 days
+    batch_df['lag_5'] = df_daily['value'].shift(5) # Energy demand +2 days - 7 days
+    batch_df['lag_6'] = df_daily['value'].shift(6) # Energy demand +1 days - 7 days
+
+    batch_df['lag_11'] = df_daily['value'].shift(11) # Energy demand +3 days - 14 days
+    batch_df['lag_12'] = df_daily['value'].shift(12) # Energy demand +2 days - 14 days
+    batch_df['lag_13'] = df_daily['value'].shift(13) # Energy demand +1 days - 14 days
+
+    # Rolling statistics
+    batch_df['rolling_mean_7'] = df_daily['value'].rolling(window=7).mean().round(2)
+    batch_df['rolling_std_7'] = df_daily['value'].rolling(window=7).std().round(2) 
+    
+    batch_df = batch_df.dropna()
+
+    # NEW: Average weather for the next 24 hours
+    batch_df['temperature_forecast'] = temp_df['temperature'].mean()
+    
+    return batch_df
+
+---
+
+
+
