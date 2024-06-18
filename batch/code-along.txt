@@ -1,0 +1,43 @@
+import pandas as pd
+from scripts import feature_processing
+import yaml
+
+yaml_file_path = 'feature_store/config_v1.yaml'
+with open(yaml_file_path, 'r') as file:
+    config = yaml.safe_load(file)
+max_offset_days = int(config['feature_store']['feature_offset'])
+max_offset_hours = (max_offset_days + 1) * 24 
+
+datetime = "2024-04-05 10:00:00"
+csv_file_path = 'data/energy_data_new.csv'
+
+mini_batch_df = (pd.read_csv(csv_file_path, parse_dates=['period'])
+      .set_index('period')
+      .sort_index(ascending=False)
+      .query("period <= @datetime"))[:max_offset_hours]
+
+online_features_df = feature_processing.feature_pipeline_online(mini_batch_df)
+online_features_df
+
+---
+
+import joblib
+import xgboost
+
+filename = f'models/batch_demand_forecaster_model_1.pkl'
+model = joblib.load(filename)
+prediction = model.predict(online_features_df)
+prediction
+
+---
+
+new_data = (pd.read_csv(csv_file_path, parse_dates=['period'])
+            .set_index('period')
+            .sort_index()[datetime:][:24]['value'])
+new_data
+
+---
+
+true_value = new_data.sum()
+
+true_value
