@@ -2,6 +2,13 @@ import pandas as pd
 import time
 import yaml
 
+# Load offset from yaml
+yaml_file_path = 'feature_store/config_v1.yaml'
+with open(yaml_file_path, 'r') as file:
+    config = yaml.safe_load(file)
+max_offset_days = int(config['feature_store']['feature_offset'])
+max_offset_hours = (max_offset_days + 1) * 24 
+
 # Measure time to read data
 start_time = time.time()
 
@@ -28,7 +35,7 @@ feature_processing.feature_pipeline_online(mini_batch_df)
 
 elapsed_time = time.time() - start_time
 
-print(f"Time to read data: {elapsed_time:.3f} seconds")
+print(f"Time to process batch: {elapsed_time:.3f} seconds")
 
 ---
 
