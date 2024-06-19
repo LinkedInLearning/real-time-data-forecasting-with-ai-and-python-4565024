@@ -3,6 +3,7 @@ from quixstreams import Application
 import csv
 import json
 import time
+import random
 
 # Create an Application - the main configuration entry point
 app = Application(broker_address="localhost:9092", consumer_group="demand_forecasting")
@@ -35,14 +36,27 @@ def load_csv(path: str):
 energy_data = load_csv(ENERGY_DATA_FILE)
 temperature_data = load_csv(TEMPERATURE_DATA_FILE)
 
+# Function to introduce anomalies
+def introduce_anomaly(value):
+    return value * random.uniform(2, 3.0)  # Increase the value by 200% to 300%
+
 print(f'Writing CSV data to the "{combined_data_topic.name}" topic ...')
 with app.get_producer() as producer:
     # Determine the length of the shorter dataset to avoid index errors
     min_length = min(len(energy_data), len(temperature_data))
     
+    # Initial step for the next anomaly
+    next_anomaly_step = random.randint(40, 60)
+    
     for i in range(min_length):
         # Access the current row from energy data
         energy = energy_data[i]
+        
+        # Introduce anomaly if the step matches the anomaly step
+        if i == next_anomaly_step:
+            energy['value'] = introduce_anomaly(energy['value'])
+            next_anomaly_step = i + random.randint(40, 60)  # Schedule next anomaly
+        
         # Prepare a message for energy data
         energy_message = {
             "Period": energy['period'],
