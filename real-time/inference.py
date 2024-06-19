@@ -47,4 +47,4 @@ latest_feature_record = latest_feature_record[feature_names]
 
 model = load_model("models/energy_demand_model_v4.pkl")
 prediction = str(model.predict(latest_feature_record))
-print(f"Next 24 hours energy prediction = {prediction} Last updated:{str(latest_feature_record.index.to_list())}")
+print(f"Next hour energy prediction = {prediction} Last updated:{str(latest_feature_record.index.to_list())}")
