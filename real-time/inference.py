@@ -26,7 +26,7 @@ def fetch_all_feature_records():
 
     try:
         while True:
-            msg = consumer.poll(1.0)  # Poll for messages with a 1-second timeout
+            msg = consumer.poll(0.1)  # Poll for messages with a 0.1-second timeout
             if msg is None:
                 break  # Exit loop if no more messages
             if not msg.error():
