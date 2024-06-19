@@ -38,7 +38,7 @@ temperature_data = load_csv(TEMPERATURE_DATA_FILE)
 
 # Function to introduce anomalies
 def introduce_anomaly(value):
-    return value * random.uniform(2, 3.0)  # Increase the value by 200% to 300%
+    return value * random.uniform(2.0, 3.0)  # Increase the value by 200% to 300%
 
 print(f'Writing CSV data to the "{combined_data_topic.name}" topic ...')
 with app.get_producer() as producer:
