@@ -1,34 +1,44 @@
 {
-	"name": "Python 3",
-	"build": {
-		"dockerfile": "Dockerfile",
-		"context": "..",
-		"args": { 
-			"VARIANT": "3.10",      // Set Python version here
-			"NODE_VERSION": "lts/*"
-		}
-	},
-	"settings": { 
-		"python.defaultInterpreterPath": "/usr/local/bin/python",
-		"python.linting.enabled": true,
-		"python.linting.pylintEnabled": true,
-		"python.formatting.autopep8Path": "/usr/local/py-utils/bin/autopep8",
-		"python.formatting.blackPath": "/usr/local/py-utils/bin/black",
-		"python.formatting.yapfPath": "/usr/local/py-utils/bin/yapf",
-		"python.linting.banditPath": "/usr/local/py-utils/bin/bandit",
-		"python.linting.flake8Path": "/usr/local/py-utils/bin/flake8",
-		"python.linting.mypyPath": "/usr/local/py-utils/bin/mypy",
-		"python.linting.pycodestylePath": "/usr/local/py-utils/bin/pycodestyle",
-		"python.linting.pydocstylePath": "/usr/local/py-utils/bin/pydocstyle",
-		"python.linting.pylintPath": "/usr/local/py-utils/bin/pylint",
-		"python.linting.pylintArgs": ["--disable=C0111"]
-	},
-	"extensions": [
-		"ms-python.python",
-		"ms-python.vscode-pylance",
-		"ms-toolsai.jupyter"
-	],
-	"remoteUser": "vscode",
-	"onCreateCommand": "[ -f requirements.txt ] && pip install -r requirements.txt; echo PS1='\"$ \"' >> ~/.bashrc", //Set Terminal Prompt to $,
-	"postCreateCommand": "sh .devcontainer/startup.sh"
+    "name": "Python 3",
+    "build": {
+        "dockerfile": "Dockerfile",
+        "context": "..",
+        "args": { 
+            "VARIANT": "3.10",
+            "NODE_VERSION": "lts/*"
+        }
+    },
+    "features": {
+        "docker-in-docker": "latest"
+    },
+    "settings": { 
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "python.linting.enabled": true,
+        "python.linting.pylintEnabled": true,
+        "python.formatting.autopep8Path": "/usr/local/py-utils/bin/autopep8",
+        "python.formatting.blackPath": "/usr/local/py-utils/bin/black",
+        "python.formatting.yapfPath": "/usr/local/py-utils/bin/yapf",
+        "python.linting.banditPath": "/usr/local/py-utils/bin/bandit",
+        "python.linting.flake8Path": "/usr/local/py-utils/bin/flake8",
+        "python.linting.mypyPath": "/usr/local/py-utils/bin/mypy",
+        "python.linting.pycodestylePath": "/usr/local/py-utils/bin/pycodestyle",
+        "python.linting.pydocstylePath": "/usr/local/py-utils/bin/pydocstyle",
+        "python.linting.pylintPath": "/usr/local/py-utils/bin/pylint",
+        "python.linting.pylintArgs": ["--disable=C0111"]
+    },
+    "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-toolsai.jupyter"
+    ],
+    "remoteUser": "vscode",
+    "forwardPorts": [
+        9092, // Kafka
+        9101, // Kafka JMX
+        8081, // Schema Registry
+        9021, // Control Center
+        8082  // REST Proxy
+    ],
+    "onCreateCommand": "[ -f requirements.txt ] && pip install -r requirements.txt; echo PS1='\"$ \"' >> ~/.bashrc",
+    "postCreateCommand": "sh .devcontainer/startup.sh"
 }
